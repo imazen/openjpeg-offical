@@ -1,0 +1,82 @@
+version: 2.1.{build}
+shallow_clone: true
+
+
+environment:
+  matrix:
+    - tbs_arch: "x86"
+      tbs_tools: "msvc12"
+      tbs_static_runtime: 0
+    
+    - tbs_arch: "x64"
+      tbs_tools: "msvc12"
+      tbs_static_runtime: 0
+    
+    - tbs_arch: "x86"
+      tbs_tools: "mingw"
+      tbs_static_runtime: 1
+    
+    - tbs_arch: "x64"
+      tbs_tools: "mingw"
+      tbs_static_runtime: 1
+
+
+install:
+  - ps: if($env:tbs_arch -eq 'x64') {
+          $env:vcvar_arg = 'x86_amd64';
+        }
+        elseif($env:tbs_arch -eq 'x86') {
+          $env:vcvar_arg = 'x86';
+        }
+  
+  # get common functions
+  - git clone https://github.com/imazen/gd-appveyor-helpers
+  - ps: . .\gd-appveyor-helpers\appveyor_funcs.ps1
+  
+  # get mingw-w64 (C:\mingw64)
+  - ps: if($env:tbs_tools -eq 'mingw' -and $env:tbs_arch -eq 'x64')
+        {
+          curl -outfile mw64.7z "http://libgd.blob.core.windows.net/mingw/x86_64-4.9.1-release-posix-seh-rt_v3-rev1.7z";
+          if((Get-FileHash mw64.7z -Algorithm SHA1).Hash -ne "91A35AE296C1A71802AB0C7228EE57F9AAC5D7C7")
+          {
+            echo "Invalid file hash";
+            exit 1;
+          };
+          7z x -oC:\ mw64.7z | out-null;
+        }
+
+
+
+build_script:
+  - '"C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\vcvarsall" %vcvar_arg%'
+  - if [%tbs_tools%]==[mingw] if [%tbs_arch%]==[x86] SET PATH=C:\MinGW\bin;%PATH%
+  - if [%tbs_tools%]==[mingw] if [%tbs_arch%]==[x64] SET PATH=C:\mingw64\bin;%PATH%
+  
+  - SET zip=openjpeg-%tbs_tools%-%tbs_arch%.zip
+  - ps: $nupkg_b = "openjpeg-$($env:tbs_tools)-$($env:tbs_arch)-$($env:APPVEYOR_REPO_BRANCH)";
+  - ps: $nupkg_c = "openjpeg-$($env:tbs_tools)-$($env:tbs_arch)-$($env:APPVEYOR_REPO_COMMIT)";
+  
+  - SET tbsd_openjpeg_static=1
+  - thumbs make
+  - for /f "tokens=*" %%i in ('thumbs list_slib') do set files=%%i
+  - 7z a %zip% %files%
+  - for /f "tokens=*" %%i in ('thumbs list_inc') do set files=%%i
+  - 7z a %zip% %files%
+  - appveyor PushArtifact %zip%
+  
+  - ps: if(Test-Path $env:zip) {
+          zip2nuget $env:zip $nupkg_b;
+          zip2nuget $env:zip $nupkg_c; }
+
+
+
+test_script:
+  - SET fail=0
+  - thumbs check || SET fail=1 & ver > nul
+  - ps: Push-Ctest-Results 'build'
+  - ps: Push-AppveyorArtifact build\Testing\Temporary\LastTest.log
+  - exit %fail%
+
+on_success:
+  - ps: Push-AppveyorArtifact "$nupkg_b*.nupkg"
+  - ps: Push-AppveyorArtifact "$nupkg_c*.nupkg"

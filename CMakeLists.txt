@@ -253,6 +253,8 @@ mark_as_advanced(BUILD_VIEWER)
 mark_as_advanced(BUILD_JAVA)
 mark_as_advanced(BUILD_JP3D)
 
+option(DISABLE_DEPS "Build without any dependencies" OFF)
+
 if(BUILD_CODEC OR BUILD_MJ2)
   # OFF: It will only build 3rd party libs if they are not found on the system
   # ON: 3rd party libs will ALWAYS be build, and used
